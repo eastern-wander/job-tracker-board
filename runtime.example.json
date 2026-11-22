@@ -1,0 +1,16 @@
+{
+  "fixture_mode": false,
+  "model_calls_enabled": false,
+  "data_dir": "data",
+  "resume_pdf": "data/profile/main.pdf",
+  "resume_docx": "data/profile/main.docx",
+  "facts_file": "data/profile/confirmed_facts.json",
+  "cv_worker_enabled": false,
+  "cv_worker_authorization": {
+    "provider": "codex_cli_chatgpt",
+    "endpoint_verified": false,
+    "credentials_verified": false,
+    "data_authorized": false,
+    "cost_authorized": false
+  }
+}

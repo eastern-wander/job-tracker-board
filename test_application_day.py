@@ -37,5 +37,5 @@ class ApplicationDayTests(unittest.TestCase):
         self.assertTrue(support["evidence"])
         reasons = japan_review(job, dict(japanese="none", work_authorized=False, requires_sponsorship=True), support)
         self.assertTrue(any("明确要求日语" in reason for reason in reasons))
-        self.assertTrue(any("目前无日本工作许可" in reason for reason in reasons))
-        self.assertTrue(any("签证支持及适用条件" in reason for reason in reasons))
+        self.assertTrue(any("No current work authorization in Japan" in reason for reason in reasons))
+        self.assertTrue(any("employer visa sponsorship and its conditions" in reason for reason in reasons))

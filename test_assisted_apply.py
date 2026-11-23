@@ -51,9 +51,9 @@ class AssistedApplyTests(unittest.TestCase):
         job = assisted.job_row(self.store, self.job)
         profile = assisted.profile(self.store)
         job["jd"] += " Applicants must be currently authorized to work in Canada on a full-time basis."
-        self.assertIn("JD 明确要求已有工作许可", assisted.blockers(job, profile, {}))
+        self.assertIn("The job description explicitly requires existing work authorization.", assisted.blockers(job, profile, {}))
         job["jd"] = "We ask whether applicants are currently authorized to work in Canada."
-        self.assertNotIn("JD 明确要求已有工作许可", assisted.blockers(job, profile, {}))
+        self.assertNotIn("The job description explicitly requires existing work authorization.", assisted.blockers(job, profile, {}))
 
     def test_receipt_is_only_success_and_preserves_used_versions(self):
         self.enable()
@@ -98,5 +98,5 @@ class AssistedApplyTests(unittest.TestCase):
         self.act("open", reviewed=True)
         assisted.profile(self.store, {"country":"Canada","identity":{"phone":"+1 604 555 0101"},
             "answers":{}, "confirmed":True})
-        with self.assertRaisesRegex(ValueError, "已变化"):
+        with self.assertRaisesRegex(ValueError, "application destination changed"):
             self.act("review", reviewed=True, docs={"CV":"CV"})

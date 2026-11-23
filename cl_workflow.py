@@ -45,30 +45,30 @@ def validate_review(bundle, profile):
     evidence={f['id']:f for f in cl_profile(profile)['facts'] if f['role']}
     paragraphs=bundle.get('letter',[])
     if len(paragraphs)!=4 or len(bundle.get('chinese',[]))!=4 or not all(bundle['chinese']):
-        raise ValueError('CL必须包含四段正文及单独的四段中文对照。')
+        raise ValueError('The cover letter must contain four main paragraphs and four separate Chinese translation paragraphs.')
     if any(not p.get('text','').strip() for p in paragraphs):
-        raise ValueError('CL正文段落不能为空。')
+        raise ValueError('Cover letter paragraphs cannot be empty.')
     if not 3<=len(bundle.get('requirements',[]))<=5:
-        raise ValueError('CL需要3至5项岗位要求与证据匹配。')
+        raise ValueError('Match three to five job requirements to evidence.')
     for req in bundle['requirements']:
         if req['priority'] not in {'Core','Preferred'} or req['evidence_type'] not in {'Direct','Transferable','No evidence'}:
-            raise ValueError('岗位要求分类无效。')
+            raise ValueError('The job requirement category is invalid.')
         if any(ref not in evidence for ref in req['refs']) or (req['evidence_type']!='No evidence' and not req['refs']):
-            raise ValueError('岗位匹配缺少已确认的事实依据。')
+            raise ValueError('The job match is missing verified factual evidence.')
     if bundle['language'].lower().startswith('en') and not 250<=sum(len(p['text'].split()) for p in paragraphs)<=350:
-        raise ValueError('英文CL正文必须为250至350词。')
+        raise ValueError('The English cover letter body must be 250 to 350 words.')
     if not paragraphs[1]['refs'] or not paragraphs[2]['refs'] or set(paragraphs[1]['refs']) & set(paragraphs[2]['refs']):
-        raise ValueError('CL两个经历段需要不同事实依据。')
+        raise ValueError('The two experience paragraphs must cite distinct facts.')
     for p in paragraphs:
         if any(ref not in evidence for ref in p['refs']):
-            raise ValueError('CL引用了不存在的简历事实。')
+            raise ValueError('The cover letter refers to a fact not present in the résumé.')
         source=' '.join(evidence[ref]['text'] for ref in p['refs'])
         numbers=lambda s:set(re.findall(r'\d+(?:[.,]\d+)*',s))
         if numbers(p['text'])-numbers(source):
-            raise ValueError('CL包含缺少事实支持的数字。')
+            raise ValueError('The cover letter contains a figure without factual support.')
         validate_metric(p['text'])
     if set(bundle.get('checks',{})) != set(CRITERIA) or any(not isinstance(v.get('passed'),bool) or not v.get('note','').strip() for v in bundle['checks'].values()):
-        raise ValueError('CL审核记录不完整。')
+        raise ValueError('The cover letter review record is incomplete.')
     return bundle
 
 
@@ -87,7 +87,7 @@ def metadata(bundle, profile, *, complete=True, audit=None):
             'tailored':bool(complete and passed and not bundle.get('writing_gaps',bundle['unverified'])),'language':bundle['language'],'body':'\n\n'.join(p['text'] for p in bundle['letter']),
             'translation_zh':bundle['chinese'],'requirements':bundle['requirements'],'unverified':bundle['unverified'], 'writing_gaps':bundle.get('writing_gaps',bundle['unverified']),
             'revisions':bundle['revisions'],'checks':bundle['checks'],'facts_sha256':confirmed_facts()['sha256'],
-            'resume_sha256':profile['sha256'],'audit':audit or {},'review_note':'模型辅助审核和确定性检查已执行，仍需本人审阅；不保证招聘结果。'}
+            'resume_sha256':profile['sha256'],'audit':audit or {},'review_note':'Model-assisted review and rule-based checks are complete. You still need to review the letter. Hiring results are not guaranteed.'}
 
 
 def render_letter(profile, job, paragraphs, language='en'):
@@ -98,7 +98,7 @@ def render_letter(profile, job, paragraphs, language='en'):
     from pypdf import PdfReader
     from html import escape
     if language.lower().startswith(('ar','he','fa')):
-        raise ValueError('当前PDF排版尚未支持该JD语言的从右到左文字，不能标记为完成；请人工排版。')
+        raise ValueError('PDF layout does not yet support right-to-left text for this language. Format the letter manually before marking it complete.')
     chinese=language.lower().startswith(('zh','chinese'))
     font='Helvetica'
     if chinese:
@@ -112,7 +112,7 @@ def render_letter(profile, job, paragraphs, language='en'):
     out=io.BytesIO();SimpleDocTemplate(out,leftMargin=62,rightMargin=62,topMargin=45,bottomMargin=45).build(story)
     pdf=out.getvalue()
     if len(PdfReader(io.BytesIO(pdf)).pages)!=1:
-        raise ValueError('CL超出一页，请压缩措辞后重新生成；未保存该版本。')
+        raise ValueError('The cover letter exceeds one page. Shorten it and regenerate. This version was not saved.')
     return pdf
 
 
@@ -121,7 +121,7 @@ def save_reviewed(store, job, profile, bundle_plan, paired_cv, connection):
     from core import stamp
     review=dict(bundle_plan['cl_review'])
     if review['facts_sha256']!=confirmed_facts()['sha256']:
-        raise ValueError('已确认事实在生成期间发生变化，请重新生成。')
+        raise ValueError('Verified facts changed during generation. Regenerate the document.')
     pdf=render_letter(profile,job,bundle_plan['letter'],review['language'])
     review['local_checks']={'pdf_pages':1,'paragraphs':len(bundle_plan['letter']),
                             'body_words':sum(len(p['text'].split()) for p in bundle_plan['letter']),
@@ -153,7 +153,7 @@ def _generate_cl(store, job_id, *, parent=None):
                      'refs':[next(f['id'] for f in facts if f['role']!=facts[0]['role'])]},
                     {'text':'I would welcome a conversation once the responsibilities and requirements have been confirmed.','refs':[]}]
         review={'status':'草稿／待核实','tailored':False,'language':'en','body':'\n\n'.join(p['text'] for p in paragraphs),
-                'translation_zh':[],'requirements':[],'unverified':['缺少完整JD；此为通用草稿，未完成岗位定制与事实审核'],
+                'translation_zh':[],'requirements':[],'unverified':['The full job description is missing. This is a generic draft that has not been tailored or fact-checked.'],
                 'facts_sha256':confirmed_facts()['sha256'],'resume_sha256':profile['sha256'],'checks':{},'policy':POLICY_VERSION}
         selected={'letter':paragraphs,'cl_review':review}
     else:
@@ -162,7 +162,7 @@ def _generate_cl(store, job_id, *, parent=None):
             from manual_workflow import document_text
             original=document_text(store,parent)
             if original['job']!=job_id or original['kind']!='CL':
-                raise ValueError('待审核材料不属于当前岗位。')
+                raise ValueError('The document awaiting review does not belong to this job.')
             selected,audit=plan_letter(job,profile,draft=original.get('body') or original['text'])
         else:
             selected,audit=plan_letter(job,profile)
@@ -170,7 +170,7 @@ def _generate_cl(store, job_id, *, parent=None):
         c.execute('BEGIN IMMEDIATE')
         latest=job_row(store,job_id)
         if latest['jd']!=job['jd'] or candidate()['sha256']!=profile['sha256']:
-            raise ValueError('JD或主简历在生成时发生变化，请重试。')
+            raise ValueError('The job description or source résumé changed during generation. Try again.')
         cv=c.execute("SELECT id FROM documents WHERE job=? AND kind='CV' AND source_hash=? AND jd_hash=? ORDER BY rowid DESC LIMIT 1",(job_id,profile['sha256'],match['jd_hash'])).fetchone()
         doc=save_reviewed(store,job,profile,selected,cv[0] if cv else None,c)
         if parent:
@@ -187,7 +187,7 @@ def generate_cl(store, job_id, *, parent=None):
         c.execute('BEGIN IMMEDIATE')
         previous=c.execute('SELECT * FROM generation_jobs WHERE job=?',(job_id,)).fetchone()
         if previous and previous['state']=='running' and (now()-dt.datetime.fromisoformat(previous['started'])).total_seconds()<900:
-            raise ValueError('该岗位的材料仍在生成或审核，请等待本次任务完成。')
+            raise ValueError('Documents for this job are still being generated or reviewed. Wait for the task to finish.')
         c.execute("INSERT OR REPLACE INTO generation_jobs VALUES(?,'running',?,NULL,'')",(job_id,stamp()))
     try:
         result=_generate_cl(store,job_id,parent=parent)

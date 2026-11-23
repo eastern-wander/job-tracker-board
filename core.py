@@ -340,7 +340,7 @@ class Store:
             hits.update(j["id"] for j in jobs if (req and j["requisition"] and norm(req) == norm(j["requisition"]) and norm(company) == norm(j["company"])) or (j["apply_url"] and j["apply_url"] in {url, apply}))
             if edit_id is not None:
                 if not any(j["id"] == edit_id for j in jobs):
-                    raise ValueError("岗位已不存在，请刷新后重试。")
+                    raise ValueError("This job no longer exists. Refresh and try again.")
                 if hits - {edit_id}:
                     return {"result": "conflict", "ids": sorted(hits | {edit_id})}
                 hits = {edit_id}

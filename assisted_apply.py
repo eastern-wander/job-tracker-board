@@ -39,7 +39,7 @@ def write_setting(c, key, value):
 def mode(store, data):
     value = data.get("mode")
     if value not in {"Dry Run", "Assisted Apply"} or (value == "Assisted Apply" and data.get("ack") is not True):
-        raise ValueError("请明确确认 Assisted Apply 的浏览器操作说明。")
+        raise ValueError("Confirm the Assisted Apply browser notice.")
     with store.connect() as c:
         write_setting(c, MODE, value)
         store.event(c, None, "Application mode changed", value)
@@ -48,9 +48,9 @@ def mode(store, data):
 
 def clean(data, fields):
     if not isinstance(data, dict) or set(data) - set(fields):
-        raise ValueError("申请资料含未知字段。")
+        raise ValueError("The application profile contains an unknown field.")
     if any(not isinstance(v, str) or len(v) > 1500 for v in data.values()):
-        raise ValueError("申请资料须为不超过 1500 字的文字。")
+        raise ValueError("Application profile fields must be text and no longer than 1,500 characters.")
     return {key: value.strip() for key, value in data.items()}
 
 
@@ -80,15 +80,15 @@ def profile(store, data=None):
             return {"identity": identity, "countries": countries, "draft": True}
         country = data.get("country")
         if country not in TARGET_MARKETS or data.get("confirmed") is not True:
-            raise ValueError("请选择国家并确认资料真实准确。")
+            raise ValueError("Choose the country and confirm the information is accurate.")
         base = clean(data.get("identity", {}), BASE)
         answers = clean(data.get("answers", {}), COUNTRY)
         if any(answers.get(k, "") not in {"", "Yes", "No"} for k in ("work_authorization", "sponsorship")):
-            raise ValueError("请选择是、否或待核实。")
+            raise ValueError("Choose Yes, No, or Unverified.")
         if answers.get("available"):
             dt.date.fromisoformat(answers["available"])
         if base.get("email") and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", base["email"]):
-            raise ValueError("请输入有效邮箱。")
+            raise ValueError("Enter a valid email address.")
         c.execute("BEGIN IMMEDIATE")
         result = setting(c, PROFILE, {"identity": {}, "countries": {}})
         result["identity"].update(base)
@@ -132,41 +132,41 @@ def blockers(job, saved, attempt, *, duplicate=False):
     identity = saved.get("identity", {})
     checks = match.get("checks") or {}
     if job["status"] == "Submission Confirmation Unknown" or attempt.get("stage") in {"Submission unverified", "Submitted"}:
-        reasons.append("提交结果待核实，禁止重投")
+        reasons.append("Submission outcome is unverified. Do not reapply.")
     elif duplicate or job["status"] in FINAL:
-        reasons.append("已有申请或重复岗位，禁止重投")
+        reasons.append("An application or duplicate listing already exists. Do not reapply.")
     if job["vacancy"] == "Closed":
-        reasons.append("岗位已关闭")
+        reasons.append("The job is closed.")
     if not jd.strip() or jd.startswith("[Partial JD]"):
-        reasons.append("缺完整 JD")
+        reasons.append("The full job description is missing.")
     if not url:
-        reasons.append("缺有效申请链接")
+        reasons.append("A valid application link is missing.")
     elif kind == "Manual application required":
-        reasons.append("其他官网，需人工投递")
+        reasons.append("Apply manually on the employer’s website.")
     if job["industry"]["state"] != "allowed":
-        reasons.append("行业排除或待核实")
+        reasons.append("The industry is excluded or unverified.")
     if not job.get("location") or job["country"] not in TARGET_MARKETS:
-        reasons.append("工作地点待核实")
+        reasons.append("The job location is unverified.")
     elif p.get("locations"):
         wanted = [norm(part) for part in p["locations"].split(",") if norm(part)]
         if wanted and not any(term in norm(job["location"]) for term in wanted):
-            reasons.append("岗位地点不在已确认地点偏好内")
+            reasons.append("The job location does not match the confirmed preferences.")
     if p.get("work_authorization") not in {"Yes", "No"}:
-        reasons.append("工签状态未知")
+        reasons.append("Work authorization is unknown.")
     if p.get("sponsorship") not in {"Yes", "No"}:
-        reasons.append("是否需要雇主赞助未知")
+        reasons.append("Employer sponsorship need is unknown.")
     if sponsorship_evidence(jd, p.get("sponsorship") == "Yes")["excluded"]:
-        reasons.append("岗位明确不提供所需赞助")
+        reasons.append("The role explicitly does not offer the required sponsorship.")
     if p.get("work_authorization") == "No" and re.search(
         r"\bmust\s+(?:(?:already|currently)\s+)?(?:be\s+(?:(?:already|currently|legally)\s+)*(?:authorized|eligible)\s+to\s+work|have\s+(?:(?:existing|valid)\s+)?work\s+authori[sz]ation)",
         jd, re.I
     ):
-        reasons.append("JD 明确要求已有工作许可")
+        reasons.append("The job description explicitly requires existing work authorization.")
     for label, check in checks.items():
         if check.get("state") == "Failed":
-            reasons.append(label + "：不符合已核实要求")
+            reasons.append(label + ": Does not meet a verified requirement.")
     if not all(identity.get(k) for k in ("name", "email", "phone")):
-        reasons.append("Application Profile 缺姓名、邮箱或电话")
+        reasons.append("The application profile is missing a name, email address, or phone number.")
     specific = attempt.get("payload", {}).get("precheck", {})
     if specific.get("salary_required") and not (specific.get("salary") or p.get("salary")):
         reasons.append("This job requires a salary answer")
@@ -175,11 +175,11 @@ def blockers(job, saved, attempt, *, duplicate=False):
     if specific.get("captcha_required") and not specific.get("captcha_cleared"):
         reasons.append("Manual verification required; no bypass")
     if job["status"] == "Manual Action Required":
-        reasons.append("现有记录标记为需人工处理")
+        reasons.append("The current record requires manual action.")
     if attempt.get("stage") == "Blocked":
-        reasons.append(attempt["payload"].get("reason") or "浏览器步骤受阻")
+        reasons.append(attempt["payload"].get("reason") or "A browser step was blocked.")
     if generation.get("state") == "failed":
-        reasons.append("材料生成失败：" + generation.get("error", "")[:140])
+        reasons.append("Material generation failed: " + generation.get("error", "")[:140])
     return list(dict.fromkeys(reasons))
 
 
@@ -269,83 +269,83 @@ def apply_action(store, data):
         old_status = c.execute("SELECT status FROM jobs WHERE id=?", (ident,)).fetchone()[0]
         uncertain = old_status == "Submission Confirmation Unknown" or stage in {"Submitted", "Submission unverified"}
         if stage == "Receipt verified" or old_status in FINAL:
-            raise ValueError("该岗位已结案或已投递。")
+            raise ValueError("This job is closed or already applied to.")
         time = stamp()
         opened, submitted = attempt.get("opened"), attempt.get("submitted")
         if action == "open":
             if setting(c, MODE, "Dry Run") != "Assisted Apply":
-                raise ValueError("请先确认切换到 Assisted Apply。")
+                raise ValueError("Confirm switching to Assisted Apply first.")
             if uncertain or prior_application(c, job):
-                raise ValueError("该岗位或重复岗位已投递或结果待核实。")
+                raise ValueError("This job or a duplicate already has a submission or an unverified outcome.")
             saved = setting(c, PROFILE, {"identity": {}, "countries": {}})
             reasons = blockers(job, saved, attempt)
             if reasons:
                 raise ValueError("；".join(reasons))
             docs = materials(job)
             if not docs.get("CV"):
-                raise ValueError("请先生成当前岗位的定制 CV。")
+                raise ValueError("Generate a tailored CV for this job first.")
             if data.get("reviewed") is not True:
-                raise ValueError("请先复核本岗位、接收方、资料及材料版本。")
+                raise ValueError("Review the job, recipient, profile, and document versions first.")
             if stage in {"Assisted filling", "Awaiting my confirmation"}:
-                raise ValueError("已有打开的申请，请使用原表单。")
+                raise ValueError("An application is already open. Use the original form.")
             reviewed_profile = {**saved.get("identity", {}), **saved.get("countries", {}).get(job["country"], {})}
             payload = dict(url=url, channel=channel, docs=docs, precheck=payload.get("precheck", {}), profile_hash=hashlib.sha256(
                 json.dumps(reviewed_profile, sort_keys=True).encode()).hexdigest())
             stage, opened, submitted = "Assisted filling", time, None
         elif action == "review":
             if stage != "Assisted filling" or uncertain:
-                raise ValueError("请先打开当前申请。")
+                raise ValueError("Open the application first.")
             review_profile = setting(c, PROFILE, {"identity": {}, "countries": {}})
             reviewed_profile = {**review_profile.get("identity", {}), **review_profile.get("countries", {}).get(job["country"], {})}
             revision = hashlib.sha256(json.dumps(reviewed_profile, sort_keys=True).encode()).hexdigest()
             if revision != payload.get("profile_hash") or payload.get("docs") != materials(job) or payload.get("url") != url:
-                raise ValueError("资料、材料或申请入口已变化，请重新开启并复核。")
+                raise ValueError("The profile, documents, or application destination changed. Reopen and review the application.")
             if data.get("reviewed") is not True:
-                raise ValueError("请在浏览器复核实际填写资料与附件后确认。")
+                raise ValueError("Review the completed fields and attachments in your browser before confirming.")
             used = data.get("docs", {})
             if not isinstance(used, dict) or used.get("CV") != payload["docs"].get("CV") or any(
                 kind not in {"CV", "CL"} or payload["docs"].get(kind) != version for kind, version in used.items()
             ):
-                raise ValueError("请选择网站实际使用的 CV 和可选 CL。")
+                raise ValueError("Choose the CV and optional cover letter used on the website.")
             payload["used_docs"] = used
             stage = "Awaiting my confirmation"
         elif action == "submitted":
             if stage != "Awaiting my confirmation" or uncertain or data.get("confirmed") is not True:
-                raise ValueError("仅在你确认已于网站点击提交后记录。")
+                raise ValueError("Record the submission only after confirming you clicked Submit on the website.")
             stage, submitted = "Submitted", time
             c.execute("UPDATE jobs SET status='Submission Confirmation Unknown' WHERE id=?", (ident,))
         elif action == "precheck":
             if uncertain or data.get("confirmed") is not True or stage in {"Assisted filling", "Awaiting my confirmation"}:
-                raise ValueError("请在开启填写前确认该岗位的专属资料。")
+                raise ValueError("Confirm the job-specific information before opening the form.")
             salary = data.get("salary", "")
             if not isinstance(salary, str) or len(salary) > 120:
-                raise ValueError("薪资答案无效。")
+                raise ValueError("The salary response is invalid.")
             payload["precheck"] = dict(salary=salary.strip(), address_authorized=data.get("address_authorized") is True,
                                        captcha_cleared=data.get("captcha_cleared") is True)
             stage = "Reviewed"
         elif action == "blocked":
             if uncertain:
-                raise ValueError("该岗位提交结果待核实。")
+                raise ValueError("The submission outcome is unverified.")
             reason = str(data.get("reason") or "").strip()[:1000]
             if not reason:
-                raise ValueError("请记录验证、缺失答案或其他阻断。")
+                raise ValueError("Record the verification challenge, missing answer, or other blocker.")
             stage, payload = "Blocked", {**payload, "reason": reason}
         elif action == "resume":
             if uncertain or stage != "Blocked" or data.get("confirmed") is not True:
-                raise ValueError("仅能在确认阻断已解除后恢复。")
+                raise ValueError("Resume only after confirming the blocker is resolved.")
             stage, payload = "Reviewed", {"precheck": payload.get("precheck", {})}
         elif action in {"receipt", "requeue"}:
             if not uncertain:
-                raise ValueError("此操作仅用于提交结果待核实的记录。")
+                raise ValueError("This action is only for applications with an unverified outcome.")
             proof = str(data.get("proof") or "").strip()[:2000]
             if len(proof) < 8 or data.get("confirmed") is not True:
-                raise ValueError("请提供核实依据并确认。")
+                raise ValueError("Provide verification evidence and confirm.")
             payload = {**payload, "url": url, "channel": channel}
             if action == "requeue":
                 if data.get("proof_kind") not in {"Platform rejected", "Employer confirmed no application", "Platform confirms no application"}:
-                    raise ValueError("缺少招聘系统或雇主明确证实未投的依据。")
+                    raise ValueError("Evidence from the hiring system or employer that no submission occurred is missing.")
                 if prior_application(c, job, reconciling=True):
-                    raise ValueError("已有平台回执、保留锁或重复申请，不能解除。")
+                    raise ValueError("A platform receipt, retained lock, or duplicate application prevents unlocking.")
                 stage = "Reviewed"
                 payload["not_submitted_evidence"] = proof
                 submitted = None
@@ -353,7 +353,7 @@ def apply_action(store, data):
             else:
                 proof_kind = data.get("proof_kind")
                 if proof_kind not in {"Success page", "Application number", "Confirmation email"}:
-                    raise ValueError("成功记录必须有确认页、申请编号或确认邮件。")
+                    raise ValueError("A successful submission requires a confirmation page, application number, or confirmation email.")
                 # A resolved record can be old. Never attribute a historic attempt to today implicitly.
                 submitted = submitted or data.get("submitted_at")
                 try:
@@ -363,7 +363,7 @@ def apply_action(store, data):
                     from core import TZ
                     submitted = at.astimezone(TZ).isoformat()
                 except (TypeError, ValueError):
-                    raise ValueError("请填写可核实的投递时间（含时区）。") from None
+                    raise ValueError("Enter a verifiable submission time with its time zone.") from None
                 stage = "Receipt verified"
                 payload.update(receipt=proof, receipt_kind=proof_kind)
                 docs = payload.get("used_docs") or payload.get("docs") or {}
@@ -374,7 +374,7 @@ def apply_action(store, data):
                             found = c.execute("SELECT 1 FROM documents WHERE id=? AND job=? AND kind=?",
                                               (version, ident, key.upper())).fetchone()
                             if not found:
-                                raise ValueError("材料版本不属于此岗位。")
+                                raise ValueError("The document version does not belong to this job.")
                             docs[key.upper()] = version
                 record = dict(date=submitted[:10], submitted_at=submitted,
                               channel=channel if channel in {"LinkedIn", "Indeed"} else "Employer website / ATS",
@@ -384,7 +384,7 @@ def apply_action(store, data):
                 store.event(c, ident, "Manually Applied", json.dumps(record, ensure_ascii=False))
                 store.event(c, ident, "Manual submission receipt", proof)
         else:
-            raise ValueError("未知申请操作。")
+            raise ValueError("Unknown application action.")
         c.execute("""INSERT OR REPLACE INTO assisted_attempts VALUES(?,?,?,?,?,?)""",
                   (ident, stage, time, opened, submitted, json.dumps(payload, ensure_ascii=False)))
         store.event(c, ident, "Assisted Apply " + stage, json.dumps(payload, ensure_ascii=False))

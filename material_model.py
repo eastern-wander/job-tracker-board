@@ -125,7 +125,7 @@ def validate_cv_text(selection, profile):
         for version, maximum in ((text, 190), (compact, 115)):
             if not 45 <= len(version) <= maximum or "\n" in version or ";" in version or (
                     numeric(version) - numeric(evidence[row["id"]])):
-                raise ValueError(f"CV要点 {row['id']} 校验失败：实际{len(version)}字符，允许45–{maximum}；未经支持的数字 {sorted(numeric(version)-numeric(evidence[row['id']]))}；请压缩文字或删除不实数字。")
+                raise ValueError(f"CV bullet {row['id']} failed validation:{len(version)}characters, allowed range45–{maximum}unsupported numbers: {sorted(numeric(version)-numeric(evidence[row['id']]))}. Shorten the text or remove unsupported numbers.")
     return {"resume_summary":summary,"resume_bullets":bullets}
 
 
@@ -220,7 +220,7 @@ def plan_letter(job, profile, *, draft=None):
     from cl_workflow import cl_profile, metadata, review_schema
     profile=cl_profile(profile)
     cli=shutil.which('codex') or ''
-    if not cli: raise ValueError('当前已登录模型入口不可用。')
+    if not cli: raise ValueError('The authenticated model entry point is unavailable.')
     env={key:value for key,value in os.environ.items() if key not in {'OPENAI_API_KEY','CODEX_API_KEY','OPENAI_BASE_URL'}}
     draft_audit=None
     if draft is None:

@@ -45,16 +45,16 @@ def approve_materials(store, job_id, data):
     job = job_row(store, job_id)
     docs = current_documents(job)
     if not all(docs.values()) or any(data.get(kind) != docs[kind]["id"] for kind in docs):
-        raise ValueError("请审核当前两份材料，再确认对应版本。")
+        raise ValueError("Review both current documents before confirming these versions.")
     review=(docs['CL'].get('metadata') or {}).get('cl_review',{})
     from cl_workflow import POLICY_VERSION, confirmed_facts
     if review.get('policy')!=POLICY_VERSION or review.get('status')!='待我审阅' or review.get('facts_sha256')!=confirmed_facts()['sha256']:
-        raise ValueError('求职信尚有未完成的事实核对，请先修订；不能将通用草稿当作完成岗位定制。')
+        raise ValueError('The cover letter has unresolved fact checks. Revise it before confirming; a generic draft is not a tailored letter.')
     if job["vacancy"] == "Closed":
-        raise ValueError("岗位已关闭。")
+        raise ValueError("This job is closed.")
     match = job["match"] or {}
     if any(doc["jd_hash"] != match.get("jd_hash") or doc["source_hash"] != match.get("source_hash") for doc in docs.values()):
-        raise ValueError("材料已过期，请根据最新 JD 和主简历重新生成。")
+        raise ValueError("These documents are outdated. Regenerate them using the latest job description and master résumé.")
     with store.connect() as c:
         store.event(c, job_id, "Materials approved", json.dumps({kind: docs[kind]["id"] for kind in docs}))
     return {"saved": True}
@@ -69,22 +69,22 @@ def pilot_review(store, job_id):
     from sponsorship import evidence
     country_profile=store.settings().get('work_authorization_profiles',{}).get(job['country'],{})
     if evidence(job['jd'],country_profile.get('state') in {'Requires sponsorship','Not authorized'})['excluded']:
-        blockers.append('本人需要赞助，雇主JD明确不提供赞助。')
+        blockers.append('You require sponsorship, and the posting explicitly says the employer does not offer it.')
     if not all(docs.values()):
-        blockers.append("请先生成并审核当前 CV 和求职信。")
+        blockers.append("Generate and review the current CV and cover letter first.")
     if display_state(job) != "待我投递":
-        blockers.append("材料版本尚未审核。")
+        blockers.append("These document versions have not been reviewed.")
     if (job.get("platform_application") or {}).get("route") != "On platform" and not any(
             e["kind"] == "Platform shows applications open" and json.loads(e["detail"]).get("route") == "On platform" for e in job["events"]):
-        blockers.append("尚未核实为平台内申请。")
+        blockers.append("An in-platform application has not been verified.")
     if job["match"] and job["match"].get("source_hash") != candidate()["sha256"]:
-        blockers.append("主简历已更新，需重新评分并生成材料。")
+        blockers.append("The master résumé changed. Re-score and regenerate the documents.")
     with store.connect() as c:
         if prior_application(c, job):
-            blockers.append("该岗位已有已提交或结果未明的申请。")
+            blockers.append("An application for this job was already submitted or has an unknown outcome.")
         profile = store.settings().get("application_profile", {})
         if not profile.get("confirmed") or profile.get("country") != job["country"]:
-            blockers.append("个人申请资料与必填问题答案尚未由你确认。")
+            blockers.append("You have not confirmed your application details and required answers.")
         record = {"job": job_id, "created": stamp(), "stage": "blocked" if blockers else "awaiting_user_confirmation",
                   "blockers": blockers, "versions": {kind: doc["id"] if doc else None for kind, doc in docs.items()},
                   "answers": profile.get("answers", {}), "live_enabled": False}
@@ -97,12 +97,12 @@ def pilot_review(store, job_id):
 def handoff(store, job_id):
     job = job_row(store, job_id)
     if job["vacancy"] == "Closed":
-        raise ValueError("岗位已关闭，不能继续投递。")
+        raise ValueError("This job is closed and no longer open for applications.")
     observations = [json.loads(e["detail"]) for e in job["events"] if e["kind"] == "Platform shows applications open"]
     platform = observations[0] if observations else None
     destination = platform["url"] if platform and platform["route"] == "On platform" else job["apply_url"] or job["url"]
     if not destination:
-        raise ValueError("缺少可打开的岗位链接，请先核对来源。")
+        raise ValueError("No job link is available. Verify the source first.")
     with store.connect() as c:
         store.event(c, job_id, "Application page opened", destination)
     return {"url": destination}
@@ -111,12 +111,12 @@ def handoff(store, job_id):
 def save_profile(store, data):
     country, answers = data.get("country"), data.get("answers")
     if country not in TARGET_MARKETS or not isinstance(answers, dict) or data.get("confirmed") is not True:
-        raise ValueError("请选择国家，并明确确认个人申请资料。")
+        raise ValueError("Choose a country and explicitly confirm your application details.")
     fields = {"name", "email", "phone", "work_authorization", "sponsorship", "salary", "other"}
     if set(answers) != fields or any(not isinstance(v, str) or len(v) > 2000 for v in answers.values()):
-        raise ValueError("请核对申请资料字段。")
+        raise ValueError("Check your application fields.")
     if any(not answers[key].strip() for key in ("name", "email", "phone", "work_authorization", "sponsorship")):
-        raise ValueError("姓名、联系方式、工作许可和赞助需求需要明确答案。")
+        raise ValueError("Provide explicit answers for name, contact information, work authorization, and sponsorship needs.")
     record = {"confirmed": True, "country": country, "answers": answers, "confirmed_at": stamp()}
     with store.connect() as c:
         c.execute("INSERT OR REPLACE INTO settings VALUES('application_profile',?)", (json.dumps(record),))
@@ -139,18 +139,18 @@ def japan_review(job, preferences, sponsorship):
     if preferences.get("japanese") == "none" and language:
         blockers.append("JD 明确要求日语：" + language[:300])
     elif checks.get("Languages", {}).get("state") != "Met":
-        blockers.append("待我确认 · 岗位工作语言")
+        blockers.append("Needs confirmation: working language")
     if not job["location"] or checks.get("Location / relocation", {}).get("state") != "Met":
-        blockers.append("待我确认 · 实际工作地点及办公安排")
+        blockers.append("Needs confirmation: work location and arrangement")
     if preferences.get("work_authorized") is False:
-        blockers.append("目前无日本工作许可")
+        blockers.append("No current work authorization in Japan")
     elif checks.get("Work authorization", {}).get("state") != "Met":
-        blockers.append("待我确认 · 日本工作许可")
+        blockers.append("Needs confirmation: work authorization in Japan")
     if preferences.get("requires_sponsorship") is not False:
         if sponsorship["excluded"]:
-            blockers.append("雇主明确不提供签证支持")
+            blockers.append("The employer explicitly does not offer visa sponsorship")
         elif not sponsorship["evidence"] or checks.get("Visa sponsorship", {}).get("state") != "Met":
-            blockers.append("待我确认 · 雇主签证支持及适用条件")
+            blockers.append("Needs confirmation: employer visa sponsorship and its conditions")
     return blockers
 
 
@@ -181,7 +181,7 @@ def application_day(c, day):
         except ValueError:
             proof = {}
         if not isinstance(proof, dict) or not isinstance(proof.get("receipt"), str) or not proof["receipt"].strip():
-            put(row["job"], "pending", row["confirmed_at"], row["platform"], "历史自动记录缺少可核实的回执")
+            put(row["job"], "pending", row["confirmed_at"], row["platform"], "Historical automatic record has no verifiable receipt")
         else:
             put(row["job"], "automatic", row["confirmed_at"], row["platform"], cv=proof.get("cv"),
                 cl=proof.get("cl"), receipt=proof["receipt"])
@@ -189,7 +189,7 @@ def application_day(c, day):
         if decisions.get(row["job"], ("",))[0] == "pending" and row["receipt"].strip():
             del decisions[row["job"]]
         put(row["job"], "manual" if row["receipt"].strip() else "pending", row["submitted_at"],
-            row["channel"], "" if row["receipt"].strip() else "已登记手动投递，待补成功凭据",
+            row["channel"], "" if row["receipt"].strip() else "Manual submission recorded; receipt still needed",
             row["cv"], row["cl"], row["receipt"])
     # Older website records can have a verified CV-only submission without an
     # application_records row, whose schema requires a cover letter version.
@@ -205,7 +205,7 @@ def application_day(c, day):
             continue
         receipt = record.get("receipt") or ""
         put(row["job"], "manual" if receipt else "pending", record.get("submitted_at") or row["created"],
-            record.get("channel") or "Other", "" if receipt else "已登记手动投递，待补成功凭据",
+            record.get("channel") or "Other", "" if receipt else "Manual submission recorded; receipt still needed",
             record.get("CV"), record.get("CL"), receipt)
     activity = c.execute("""SELECT job,platform,state,created,detail FROM apply_attempts
         WHERE state IN ('reserved','unknown','failed')

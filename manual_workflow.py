@@ -70,12 +70,12 @@ def _generate(store, job_id, *, regenerate=False, use_model=False):
         with store.connect() as c: store.event(c,job_id,'Generation stage',step)
     if use_model:
         from material_model import plan
-        progress('模型选材与CV文字生成')
+        progress('Selecting evidence and writing the CV')
         def save_cv(selection):
             nonlocal cv_early
-            progress('CV原模板导出与保存')
+            progress('Exporting the CV in the original template')
             cv_early=make_document(store,job,'CV',manual=True,regenerate=True,model_plan=selection)
-            progress('CV已保存；CL独立事实审核与修订')
+            progress('CV saved; independently fact-checking and revising the cover letter')
         selected, audit = plan(job, profile, on_cv=save_cv)
     else:
         selected, audit = None, MATERIAL_EXECUTION
@@ -118,7 +118,7 @@ def generate(store, job_id, *, regenerate=False, use_model=False, claimed=False)
         job_row(store, job_id)
         previous = c.execute("SELECT * FROM generation_jobs WHERE job=?", (job_id,)).fetchone()
         if not claimed and previous and previous["state"] == "running" and (now() - dt.datetime.fromisoformat(previous["started"])).total_seconds() < 900:
-            raise ValueError("材料仍在生成，请等待本次任务完成。")
+            raise ValueError("Document generation is still in progress.")
         c.execute("INSERT OR REPLACE INTO generation_jobs VALUES(?,'running',?,NULL,'')", (job_id, stamp()))
     try:
         result = _generate(store, job_id, regenerate=regenerate, use_model=use_model)
@@ -154,7 +154,7 @@ def edit_document(store, doc_id, body):
     original_text = document_text(store, doc_id)
     if original_text["kind"] == "CV":
         if body.strip() != original_text["text"].strip():
-            raise ValueError("CV必须在原模板的要点中编辑，请按岗位重新生成，避免破坏版式。")
+            raise ValueError("Edit the CV within its original bullet layout. Regenerate it for this job to preserve the formatting.")
         new_id = uuid.uuid4().hex
         with store.connect() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -192,7 +192,7 @@ def edit_document(store, doc_id, body):
         meta = json.loads(asset[0]) if asset else {'template': POLICY_VERSION}
         review = meta.get('cl_review', {})
         review.update(status='草稿／待核实', body=body.strip(), translation_zh=[],
-                      unverified=['手动修改后的内容与中文对照需要重新审核'], checks={}, manually_edited=True)
+                      unverified=['Manually edited text and its Chinese translation need a new review.'], checks={}, manually_edited=True)
         meta.update(cl_review=review, parent=doc_id, created=stamp(), pdf_sha256=__import__('hashlib').sha256(pdf).hexdigest())
         c.execute("INSERT INTO document_assets VALUES(?,NULL,?)", (new_id, json.dumps(meta)))
         store.event(c, old["job"], "Material edited", json.dumps({"version": new_id, "parent": doc_id, "kind": old["kind"]}))
@@ -362,7 +362,7 @@ def daily_submissions(c, day):
 def correct_application(store, job_id, data):
     reason = data.get("reason", "")
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
-        raise ValueError("请填写更正原因。")
+        raise ValueError("Enter a reason for the correction.")
     job = job_row(store, job_id)
     with store.connect() as c:
         c.execute("BEGIN IMMEDIATE")
@@ -370,7 +370,7 @@ def correct_application(store, job_id, data):
         if not record:
             legacy = next((json.loads(e["detail"]) for e in job["events"] if e["kind"] == "Manually Applied"), None)
             if not legacy:
-                raise ValueError("该岗位没有可更正的手动投递记录。")
+                raise ValueError("There is no manual application record to correct for this job.")
             c.execute("INSERT INTO application_records VALUES(?,?,?,?,?,?,?,?,1)", (job_id, legacy["date"],
                       legacy.get("submitted_at") or stamp(), legacy["channel"], legacy["CV"], legacy["CL"],
                       legacy.get("receipt", ""), legacy.get("notes", "")))
@@ -381,7 +381,7 @@ def correct_application(store, job_id, data):
         else:
             date, channel = data.get("date", record["date"]), data.get("channel", record["channel"])
             if not isinstance(date, str) or dt.date.fromisoformat(date) > now().date() or not isinstance(channel, str) or not channel.strip() or len(channel) > 200:
-                raise ValueError("请填写有效的投递日期和渠道。")
+                raise ValueError("Enter a valid submission date and channel.")
             c.execute("UPDATE application_records SET date=?,channel=?,notes=? WHERE job=?",
                       (date, channel.strip(), str(data.get("notes", record["notes"]))[:3000], job_id))
         store.event(c, job_id, "Manual submission corrected", json.dumps({"before": dict(record),
@@ -398,7 +398,7 @@ def start_generation(store, job_id, *, regenerate=False, use_model=True):
         prior=c.execute('SELECT * FROM generation_jobs WHERE job=?',(job_id,)).fetchone()
         if prior and prior['state']=='running': return {'accepted':True,'existing':True}
         c.execute("INSERT OR REPLACE INTO generation_jobs VALUES(?,'running',?,NULL,'')",(job_id,stamp()))
-        store.event(c,job_id,'Generation stage','后台已接收，等待模型选材')
+        store.event(c,job_id,'Generation stage','Queued for model-assisted evidence selection')
     def worker():
         try: generate(store,job_id,regenerate=regenerate,use_model=use_model,claimed=True)
         except Exception: pass # generate persists the concrete failure for polling/retry

@@ -22,13 +22,13 @@ class ReadFailure(ValueError):
 
 def target(url):
     if not isinstance(url, str) or len(url) > 3000 or re.search(r'[\s\\]', url):
-        raise ReadFailure("请粘贴一个有效的公开 HTTPS 岗位链接。")
+        raise ReadFailure("Paste a valid public HTTPS job link.")
     parsed = urlsplit(url)
     if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.port not in (None, 443):
-        raise ReadFailure("只读取标准端口的公开 HTTPS 链接。")
+        raise ReadFailure("Only public HTTPS links on the standard port can be read.")
     host = parsed.hostname.rstrip('.').lower()
     if re.search(r'(?:^|\.)(?:linkedin\.com|indeed\.[a-z.]+)$', host):
-        raise ReadFailure("LinkedIn／Indeed 需要在平台页面查看；请粘贴完整 JD 或使用雇主官网链接。")
+        raise ReadFailure("Open LinkedIn or Indeed directly. Paste the full job description or use the employer’s website.")
     return parsed, host
 
 
@@ -38,9 +38,9 @@ def download(url, redirects=3, *, inspect_redirect=False):
         try:
             ips = {r[4][0] for r in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
         except OSError as error:
-            raise ReadFailure("域名无法解析，请检查链接后重试。") from error
+            raise ReadFailure("The site address could not be resolved. Check the link and try again.") from error
         if not ips or any(not ipaddress.ip_address(ip).is_global or ipaddress.ip_address(ip).is_multicast for ip in ips):
-            raise ReadFailure("此链接不指向公开网站。")
+            raise ReadFailure("The link does not point to a public website.")
         connection = http.client.HTTPSConnection(host, timeout=7)
         # Pin the connection to the validated address while keeping TLS hostname verification.
         address = sorted(ips, key=lambda ip: (':' in ip, ip))[0]
@@ -57,13 +57,13 @@ def download(url, redirects=3, *, inspect_redirect=False):
                 continue
             data = response.read(2_000_001)
             if len(data) > 2_000_000:
-                raise ReadFailure("页面太大，请手动补充 JD。")
+                raise ReadFailure("The page is too large. Paste the job description manually.")
             return status, data.decode('utf-8', errors='replace'), url
         except (OSError, http.client.HTTPException) as error:
-            raise ReadFailure("网站连接失败或超时，请稍后重试。") from error
+            raise ReadFailure("The connection failed or timed out. Try again later.") from error
         finally:
             connection.close()
-    raise ReadFailure("页面重定向次数过多。")
+    raise ReadFailure("The page redirected too many times.")
 
 
 class StructuredPosting(HTMLParser):
@@ -120,23 +120,23 @@ def public_posting(url):
             rules = RobotFileParser()
             rules.parse(body.splitlines())
             if not rules.can_fetch('TrackerBoard', final):
-                raise ReadFailure("该网站的 robots.txt 不允许读取此页面。")
+                raise ReadFailure("The website’s robots.txt does not allow this page to be read.")
         elif status not in (404, 410):
-            raise ReadFailure("无法核实该网站的公开抓取规则，请手动补充。")
+            raise ReadFailure("The site’s public access rules could not be verified. Enter the information manually.")
         status, html, next_url = download(final, inspect_redirect=True)
         if status not in (301, 302, 303, 307, 308) or next_url == final:
             break
         final = next_url
     else:
-        raise ReadFailure("页面重定向次数过多。")
+        raise ReadFailure("The page redirected too many times.")
     if status in (401, 403, 429):
-        raise ReadFailure(f"网站拒绝公开读取（HTTP {status}），可能需要登录、人机验证或稍后重试。")
+        raise ReadFailure(f"The site denied public access (HTTP {status}). It may require sign-in or verification. Try again later.")
     if status in (404, 410):
-        raise ReadFailure(f"岗位链接失效或已下架（HTTP {status}）。")
+        raise ReadFailure(f"The job link is unavailable or the listing was removed (HTTP {status}).")
     if status != 200:
-        raise ReadFailure(f"网站返回 HTTP {status}，请重试或手动补充。")
+        raise ReadFailure(f"The site returned HTTP {status}. Retry or enter the information manually.")
     if re.search(r'<title>[^<]*(?:security check|just a moment|access denied|sign in|log in|captcha)', html, re.I):
-        raise ReadFailure("页面显示登录或人机验证提示。")
+        raise ReadFailure("The page requires sign-in or a verification challenge.")
     parser = StructuredPosting()
     parser.feed(html)
     records = []
@@ -146,7 +146,7 @@ def public_posting(url):
         except (ValueError, RecursionError):
             continue
     if len(records) != 1:
-        raise ReadFailure("未找到唯一的公开岗位数据。该链接可能是列表、动态页面或仅公开摘要。")
+        raise ReadFailure("No single public job was found. The link may point to a list, a dynamic page, or a brief summary.")
     row = records[0]
     employer = row.get('hiringOrganization')
     company = employer.get('name') if isinstance(employer, dict) else ''
@@ -154,7 +154,7 @@ def public_posting(url):
     raw = row.get('description')
     jd = description(raw) if isinstance(raw, str) else ''
     if not all(isinstance(x, str) and x.strip() for x in (title, company)):
-        raise ReadFailure("网页缺少可核验的职位名或雇主，请手动补充。")
+        raise ReadFailure("The page has no verifiable job title or employer. Enter the information manually.")
     locations = row.get('jobLocation') or []
     locations = locations if isinstance(locations, list) else [locations]
     parts = []
@@ -193,13 +193,13 @@ def read_listing(url):
             board = fetch_json(base)
         except ValueError as error:
             if re.search(r'\b(?:404|410)\b', str(error)):
-                raise ReadFailure("雇主招聘接口显示岗位不存在或已下架。") from error
-            raise ReadFailure("雇主招聘接口暂不可读，请重试或手动补充。") from error
+                raise ReadFailure("The employer’s job feed reports that the role is missing or was removed.") from error
+            raise ReadFailure("The employer’s job feed is unavailable. Retry or enter the information manually.") from error
         if str(detail.get('id')) != job_id or not board.get('name'):
-            raise ReadFailure("雇主接口未返回匹配的岗位编号。")
+            raise ReadFailure("The employer’s feed returned no matching job ID.")
         row = normalize(token, board['name'], detail, {}, verification=True)
         if not row:
-            raise ReadFailure("雇主接口未返回可识别的职位信息。")
+            raise ReadFailure("The employer’s feed returned no recognizable job information.")
         return {**row[1], 'url': url}
     return public_posting(url)
 

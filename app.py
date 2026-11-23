@@ -307,13 +307,13 @@ def dashboard(store):
     for job in all_jobs:
         if job.get('generation'):
             g=job['generation'];g['elapsed_seconds']=max(0,int(((dt.datetime.fromisoformat(g['finished']) if g.get('finished') else clock)-dt.datetime.fromisoformat(g['started'])).total_seconds()))
-            g['step']=next((e['detail'] for e in job['events'] if e['kind']=='Generation stage' and e['created']>=g['started']), '等待处理')
+            g['step']=next((e['detail'] for e in job['events'] if e['kind']=='Generation stage' and e['created']>=g['started']), 'Waiting to start')
         from sponsorship import evidence as sponsor_evidence
         country_profile=settings.get('work_authorization_profiles',{}).get(job['country'],{})
         job['sponsorship_evidence']=sponsor_evidence(job['jd'],country_profile.get('state') in {'Requires sponsorship','Not authorized'})
         job["application_blockers"] = auto_apply.application_blockers(job, local)
         job["retention_blocker"] = cv_queue.gate(job,{**settings,"cv_queue_threshold":settings["high"]})
-        if job['sponsorship_evidence']['excluded']:job['application_blockers'].append('本人需要雇主赞助，但JD明确不提供。')
+        if job['sponsorship_evidence']['excluded']:job['application_blockers'].append('This role explicitly does not offer required employer sponsorship.')
         if job["country"] == "Japan":
             job["japan_review"] = workflow.japan_review(job, settings.get("japan_application_preferences", {}), job["sponsorship_evidence"])
             job["application_blockers"].extend(job["japan_review"])
@@ -539,7 +539,7 @@ def handler(store, port):
                     if path == "/api/application-day":
                         day = parse_qs(urlsplit(self.path).query).get("date", [now().date().isoformat()])[0]
                         if dt.date.fromisoformat(day).isoformat() != day:
-                            raise ValueError("请选择有效日期。")
+                            raise ValueError("Choose a valid date.")
                         with store.connect() as c:
                             return self.reply(workflow.application_day(c, day))
                     if path == "/api/email/labels":
@@ -610,7 +610,7 @@ def handler(store, port):
                         from cl_workflow import generate_cl
                         original=manual_workflow.document_text(store, data.get('id'))
                         if original['kind']!='CL':
-                            raise ValueError('请选择求职信版本。')
+                            raise ValueError('Select a cover letter version.')
                         return self.reply(generate_cl(store, original['job'], parent=original['id']))
                     if path == "/api/cl/generate":
                         from cl_workflow import generate_cl
@@ -636,16 +636,16 @@ def handler(store, port):
                     if path == "/api/import/screenshot":
                         image = base64.b64decode(data.get("image", ""), validate=True)
                         if not image or len(image) > 350_000:
-                            raise ValueError("请选择不超过 350 KB 的 PNG 或 JPEG 截图。")
+                            raise ValueError("Choose a PNG or JPEG screenshot no larger than 350 KB.")
                         extension = ".png" if image.startswith(b"\x89PNG\r\n\x1a\n") else ".jpg" if image.startswith(b"\xff\xd8\xff") else ""
                         if not extension:
-                            raise ValueError("截图必须是 PNG 或 JPEG。")
+                            raise ValueError("The screenshot must be PNG or JPEG.")
                         folder = store.folder / "import-evidence"
                         folder.mkdir(mode=0o700, exist_ok=True)
                         name = uuid.uuid4().hex + extension
                         with store.connect() as c:
                             if not c.execute("SELECT 1 FROM jobs WHERE id=?", (data.get("id"),)).fetchone():
-                                raise ValueError("请先保存岗位。")
+                                raise ValueError("Save the job first.")
                             (folder / name).write_bytes(image)
                             store.event(c, data["id"], "Import screenshot", name)
                         return self.reply({"saved": True})
@@ -653,7 +653,7 @@ def handler(store, port):
                         if path == "/api/import/link":
                             url = data.get("url")
                             if not isinstance(url, str) or not url.strip() or len(url) > 3000:
-                                raise ValueError("请输入有效的岗位链接。")
+                                raise ValueError("Enter a valid job link.")
                             result = link_intake.import_link(store, url.strip())
                             if result["result"] == "unreadable":
                                 assisted_apply.save_backlog(store, url.strip(), result["reason"])
@@ -816,7 +816,7 @@ def main():
         return
     cv_queue.reconcile(store)
     with store.connect() as c:
-        c.execute("UPDATE generation_jobs SET state='failed',finished=?,error='服务重启中断了生成。已保存材料保留，请重试。' WHERE state='running'",(stamp(),))
+        c.execute("UPDATE generation_jobs SET state='failed',finished=?,error='A service restart interrupted generation. Saved materials are still available. Please retry.' WHERE state='running'",(stamp(),))
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(store, args.port))
     cv_queue.recover_interrupted(store)
     import cv_worker

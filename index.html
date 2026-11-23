@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,20 +9,20 @@
 <script defer src="/ui.js"></script>
 </head>
 <body>
-<header><div class="brand"><img src="/mark.svg" alt="" width="36" height="36"><div><strong>Tracker Board</strong><small>Discover · Review · Apply manually</small></div></div><span class="local">本地求职工作台</span></header>
+<header><div class="brand"><img src="/mark.svg" alt="" width="36" height="36"><div><strong>Tracker Board</strong><small>Discover · Review · Apply manually</small></div></div><span class="local">Local job search workspace</span></header>
 <div class="shell">
-<nav aria-label="工作区">
-<button data-view="Dashboard">首页</button>
-<button data-view="Job Discovery">搜索岗位</button>
-<button data-view="Candidate Pool">岗位与材料</button>
-<button data-view="My Imports">我导入的岗位</button>
-<button data-view="Assisted Apply">辅助投递</button>
-<button data-view="Application Tracker">投递记录</button>
-<button data-view="Settings">设置</button>
+<nav aria-label="Workspace">
+<button data-view="Dashboard">Dashboard</button>
+<button data-view="Job Discovery">Job Discovery</button>
+<button data-view="Candidate Pool">Jobs and Materials</button>
+<button data-view="My Imports">My Imports</button>
+<button data-view="Assisted Apply">Assisted Apply</button>
+<button data-view="Application Tracker">Application Tracker</button>
+<button data-view="Settings">Settings</button>
 </nav>
-<main><div class="heading"><h1 id="title">首页</h1><button class="primary" id="import">导入岗位</button></div>
+<main><div class="heading"><h1 id="title">Dashboard</h1><button class="primary" id="import">Import job</button></div>
 <p id="notice" role="status" hidden></p><div id="content" aria-busy="true"></div></main>
 </div>
-<dialog id="dialog"><div class="dialog-head"><h2 id="dialog-title"></h2><button id="close" aria-label="关闭">×</button></div><div id="dialog-body"></div></dialog>
+<dialog id="dialog"><div class="dialog-head"><h2 id="dialog-title"></h2><button id="close" aria-label="Close">×</button></div><div id="dialog-body"></div></dialog>
 </body>
 </html>
